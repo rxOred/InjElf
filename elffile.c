@@ -10,9 +10,11 @@
 
 void elf_parse_headers(Elf *elf)
 {
-    elf->m_ehdr = (Elf64_Ehdr)elf->m_map;
-    elf->m_phdr = elf->m_map[elf->m_ehdr->e_phoff];
-    elf->m_shdr = elf->m_map[elf->m_ehdr->e_shoff];
+    elf->m_ehdr = (Elf64_Ehdr *) elf->m_map;
+    elf->m_phdr = (Elf64_Phdr *) &elf->m_map[elf->m_ehdr->
+        e_phoff];
+    elf->m_shdr = (Elf64_Shdr *) &elf->m_map[elf->m_ehdr->
+        e_shoff];
 }
 
 bool elf_is_elf(Elf *elf)
@@ -34,9 +36,6 @@ err:
     return false;
 }
 
-/*
- * fini
- */
 int elf_destroy_file(Elf *this)
 {
     if(this->m_map != NULL){
@@ -51,9 +50,6 @@ err:
     return -1;
 }
 
-/*
- * ini
- */
 int elf_init_file(Elf *this)
 {
     if(this->m_filename == NULL){
@@ -90,9 +86,6 @@ err:
     return -1;
 }
 
-/*
- * constructor
- */
 Elf *elf_construct(char *filename)
 {
     struct Elf *elf = malloc(sizeof(Elf));

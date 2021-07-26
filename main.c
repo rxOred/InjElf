@@ -7,9 +7,6 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-/*
- * parse command line arguments
- */
 char *parse_args(int argc, char *argv[])
 {
     for(int i = 0; i < argc; i++){
@@ -23,13 +20,4 @@ char *parse_args(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
     char *filename = parse_args(argc, argv);
-    Elf *elf = elf_construct(filename);
-    if(elf == NULL){
-        goto err;
-    }
-
-    elf->InitFile(elf);
-    
-err:
-    return -1;
 }
