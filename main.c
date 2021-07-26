@@ -1,21 +1,25 @@
 #include "util.h"
-#include "main.h"
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 
-void parse_args(Elf *elf, int argc, char *argv[])
+/*
+ * parse command line arguments
+ */
+char *parse_args(int argc, char *argv[])
 {
     for(int i = 0; i < argc; i++){
         if(strcmp(argv[i], "-f") == 0){
-            elf->m_filename = strdup(argv[i + 1]);
-        } else if(strcmp(argv[i], "-p") == 0){
-            sscanf(argv[i + 1], "%d", &elf->m_port_number);
+            return argv[i + 1];
         }
     }
+    return NULL;
 }
 
 int main(int argc, char *argv[])
 {
-    Elf elf;
-    parse_args(&elf, argc, argv);
+    char *filename = parse_args(argc, argv);
 }
