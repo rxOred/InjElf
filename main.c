@@ -1,4 +1,5 @@
 #include "util.h"
+#include "elf.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,4 +23,13 @@ char *parse_args(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
     char *filename = parse_args(argc, argv);
+    Elf *elf = elf_construct(filename);
+    if(elf == NULL){
+        goto err;
+    }
+
+    elf->InitFile(elf);
+    
+err:
+    return -1;
 }

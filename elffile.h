@@ -13,6 +13,8 @@ struct Elf{
 
     int (*InitFile) (struct Elf *this);
     int (*DestroyFile) (struct Elf *this);
+    bool (*IsElf) (struct Elf *this);
+    void (*ParseHeaders) (struct Elf *this);
 };
 typedef struct Elf Elf;
 

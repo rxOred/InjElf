@@ -1,12 +1,41 @@
-#include "elf.h"
+#include "elffile.h"
+#include <elf.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 
+void elf_parse_headers(Elf *elf)
+{
+    elf->m_ehdr = (Elf64_Ehdr)elf->m_map;
+    elf->m_phdr = elf->m_map[elf->m_ehdr->e_phoff];
+    elf->m_shdr = elf->m_map[elf->m_ehdr->e_shoff];
+}
+
+bool elf_is_elf(Elf *elf)
+{
+    if(elf->m_map == NULL){
+        fprintf(stderr, "file not mapped\n");
+        goto err;
+    }
+
+    if(elf->m_map[0] != 0x7f || elf->m_map[1] != 'E' ||
+            elf->m_map[2] != 'L' || elf->m_map[3] != 'F'){
+        fprintf(stderr, "not an elf binary\n");
+        goto err;
+    }
+
+    return true;
+
+err:
+    return false;
+}
+
 /*
- * uninitialize
+ * fini
  */
 int elf_destroy_file(Elf *this)
 {
@@ -16,13 +45,14 @@ int elf_destroy_file(Elf *this)
             goto err;
         }
         this->m_map = NULL;
+        return 0;
     }
 err:
     return -1;
 }
 
 /*
- * initialization
+ * ini
  */
 int elf_init_file(Elf *this)
 {
@@ -79,9 +109,9 @@ Elf *elf_construct(char *filename)
     elf->m_shdr = NULL;
     elf->InitFile = elf_init_file;
     elf->DestroyFile = elf_destroy_file;
+    elf->IsElf = elf_is_elf;
+    elf->ParseHeaders = elf_parse_headers;
 
 err:
-    return NULL;
+    return elf;
 }
-
-
