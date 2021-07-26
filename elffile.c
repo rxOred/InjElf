@@ -11,9 +11,9 @@
 void elf_parse_headers(Elf *elf)
 {
     elf->m_ehdr = (Elf64_Ehdr *) elf->m_map;
-    elf->m_phdr = (Elf64_Phdr *) &elf->m_map[elf->m_ehdr->
+    elf->m_phdr = (Elf64_Phdr *) &elf->m_map[elf->m_ehdr->  \
         e_phoff];
-    elf->m_shdr = (Elf64_Shdr *) &elf->m_map[elf->m_ehdr->
+    elf->m_shdr = (Elf64_Shdr *) &elf->m_map[elf->m_ehdr->  \
         e_shoff];
 }
 
@@ -24,7 +24,7 @@ bool elf_is_elf(Elf *elf)
         goto err;
     }
 
-    if(elf->m_map[0] != 0x7f || elf->m_map[1] != 'E' ||
+    if(elf->m_map[0] != 0x7f || elf->m_map[1] != 'E' ||     \
             elf->m_map[2] != 'L' || elf->m_map[3] != 'F'){
         fprintf(stderr, "not an elf binary\n");
         goto err;
@@ -70,7 +70,7 @@ int elf_init_file(Elf *this)
     }
 
     this->m_size = st.st_size;
-    this->m_map = mmap(NULL, this->m_size, PROT_READ |
+    this->m_map = mmap(NULL, this->m_size, PROT_READ |    \
             PROT_WRITE, MAP_PRIVATE, fd, 0);
     if(this->m_map == MAP_FAILED){
         fprintf(stderr, "memory map failed");
