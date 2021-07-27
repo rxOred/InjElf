@@ -7,10 +7,17 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+struct text_padding_info {
+    Elf64_Xword text_filesize, text_memsize;
+    Elf64_Phdr *text_phdr;
+    Elf64_Off text_start, text_end;
+    int freespace;
+};
+
 /*
  * Elf Class
  */
-struct Elf{
+struct Elf {
     char *m_filename;
     int m_size;
     uint8_t *m_map;
@@ -22,6 +29,10 @@ struct Elf{
     int (*DestroyFile) (struct Elf *self);
     bool (*IsElf) (struct Elf *self);
     void (*ParseHeaders) (struct Elf *self);
+
+    Elf64_Phdr* (*FindFreeSpace) (struct Elf *self,     \
+            struct padding_info *pad_info);
+
 };
 typedef struct Elf Elf;
 
