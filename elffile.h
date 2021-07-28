@@ -30,8 +30,8 @@ struct Elf {
     bool (*IsElf) (struct Elf *self);
     void (*ParseHeaders) (struct Elf *self);
 
-    Elf64_Phdr* (*FindFreeSpace) (struct Elf *self,     \
-            struct padding_info *pad_info);
+    struct text_padding_info* (*FindFreeSpace) (struct  \
+            Elf *self, struct padding_info *pad_info);
 
     int (*FindSectionIndexByName) (struct Elf *self,    \
             const char *section_name);
