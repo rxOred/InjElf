@@ -26,18 +26,18 @@ struct Elf {
     Elf64_Phdr *m_phdr;
 
     int (*InitFile) (struct Elf *self);
-    int (*DestroyFile) (struct Elf *self);
     bool (*IsElf) (struct Elf *self);
     void (*ParseHeaders) (struct Elf *self);
 
     struct text_padding_info* (*FindFreeSpace) (struct  \
-            Elf *self, struct padding_info *pad_info);
+            Elf *self);
 
     int (*FindSectionIndexByName) (struct Elf *self,    \
             const char *section_name);
 };
 typedef struct Elf Elf;
 
-Elf *elf_construct(char *filename);
+Elf *elf_constructor(char *filename);
+int elf_destructor(Elf *self);
 
 #endif /* ELFFILE_H */

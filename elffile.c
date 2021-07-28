@@ -9,6 +9,9 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
+/*
+ * to get the .text section code from our shellcode
+ */
 static int elf_get_section_index_by_name(Elf *elf, const char   \
         *section_name)
 {
@@ -29,6 +32,9 @@ static int elf_get_section_index_by_name(Elf *elf, const char   \
     return -1;
 }
 
+/*
+ * find free space in target binary
+ */
 static struct text_padding_info *elf_find_free_space(Elf *elf)
 {
     struct text_padding_info *pad_info = malloc(sizeof          \
@@ -96,20 +102,6 @@ err:
     return false;
 }
 
-static int elf_destroy_file(Elf *this)
-{
-    if(this->m_map != NULL){
-        if(munmap(this->m_map, this->m_size) < 0){
-            fprintf(stderr, "memory unmap failed\n");
-            goto err;
-        }
-        this->m_map = NULL;
-        return 0;
-    }
-err:
-    return -1;
-}
-
 static int elf_init_file(Elf *this)
 {
     if(this->m_filename == NULL){
@@ -146,7 +138,7 @@ err:
     return -1;
 }
 
-Elf *elf_construct(char *filename)
+Elf *elf_constructor(char *filename)
 {
     struct Elf *elf = malloc(sizeof(Elf));
     if(elf == NULL){
@@ -161,11 +153,24 @@ Elf *elf_construct(char *filename)
     elf->m_phdr = NULL;
     elf->m_shdr = NULL;
     elf->InitFile = elf_init_file;
-    elf->DestroyFile = elf_destroy_file;
     elf->IsElf = elf_is_elf;
     elf->ParseHeaders = elf_parse_headers;
     elf->FindFreeSpace = elf_find_free_space;
     elf->FindSectionIndexByName = elf_get_section_index_by_name;
 err:
     return elf;
+}
+
+int elf_destructor(Elf *this)
+{
+    if(this->m_map != NULL){
+        if(munmap(this->m_map, this->m_size) < 0){
+            fprintf(stderr, "memory unmap failed\n");
+            goto err;
+        }
+        this->m_map = NULL;
+        return 0;
+    }
+err:
+    return -1;
 }

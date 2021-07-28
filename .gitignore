@@ -1,0 +1,4 @@
+shellcode.asm
+shellcode
+shellcode.o
+vgcore.*
