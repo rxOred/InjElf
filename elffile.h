@@ -33,6 +33,8 @@ struct Elf {
     Elf64_Phdr* (*FindFreeSpace) (struct Elf *self,     \
             struct padding_info *pad_info);
 
+    int (*FindSectionIndexByName) (struct Elf *self,    \
+            const char *section_name);
 };
 typedef struct Elf Elf;
 

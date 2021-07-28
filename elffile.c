@@ -9,6 +9,26 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
+static int elf_get_section_index_by_name(Elf *elf, const char   \
+        *section_name)
+{
+    /* 
+     * first we have to parse shstrtab
+     */
+    Elf64_Shdr *section = &elf->m_shdr[elf->m_ehdr->e_shstrndx];
+    char *shstrtab = (char *)&elf->m_map[section->sh_offset];
+
+    for(int i = 0; i < elf->m_ehdr->e_shnum; i++){
+        if(strcmp(&shstrtab[elf->m_shdr[i].sh_name],            \
+                    section_name) == 0){
+            printf("%s section found\n", section_name);
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 static struct text_padding_info *elf_find_free_space(Elf *elf)
 {
     struct text_padding_info *pad_info = malloc(sizeof          \
@@ -37,7 +57,10 @@ static struct text_padding_info *elf_find_free_space(Elf *elf)
                     pad_info->freespace);
             pad_info->freespace = elf->m_phdr[i].p_offset -     \
                 pad_info->text_end;
-            printf("reset gap to %d\n", pad_info->freespace);
+            printf("final gap size %d\n", pad_info->freespace);
+        } else {
+            fprintf(stderr, "failed to find a code cave\n");
+            goto err;
         }
     }
 
@@ -141,7 +164,8 @@ Elf *elf_construct(char *filename)
     elf->DestroyFile = elf_destroy_file;
     elf->IsElf = elf_is_elf;
     elf->ParseHeaders = elf_parse_headers;
-
+    elf->FindFreeSpace = elf_find_free_space;
+    elf->FindSectionIndexByName = elf_get_section_index_by_name;
 err:
     return elf;
 }
