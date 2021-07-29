@@ -14,7 +14,7 @@
  * & Target classes
  */
 struct Elf {
-    char *m_filename;
+    const char *m_filename;
     int m_size;
     uint8_t *m_map;
     Elf64_Ehdr *m_ehdr;
@@ -39,10 +39,10 @@ void ElfDestructor(Elf *self);
  */
 struct Target {
     Elf *m_elf;
-    Elf64_Xword text_filesize, text_memsize;
-    Elf64_Phdr *text_phdr;  // probably useless, in near future
-    Elf64_Off text_start, text_end;
-    int m_freespace;
+    Elf64_Xword text_filesize;
+    Elf64_Off text_end;
+    Elf64_Addr parasite_addr;
+    int available_freespace;
 
     int (*TargetFindFreeSpace) (struct Target *self);
 };
