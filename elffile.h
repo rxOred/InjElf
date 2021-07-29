@@ -7,15 +7,11 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-struct text_padding_info {
-    Elf64_Xword text_filesize, text_memsize;
-    Elf64_Phdr *text_phdr;
-    Elf64_Off text_start, text_end;
-    int freespace;
-};
-
 /*
  * Elf Class
+ * Holds structures and other information related to 
+ * Elf binaries in general. Base class for Shellcode
+ * & Target classes
  */
 struct Elf {
     char *m_filename;
@@ -28,16 +24,51 @@ struct Elf {
     int (*InitFile) (struct Elf *self);
     bool (*IsElf) (struct Elf *self);
     void (*ParseHeaders) (struct Elf *self);
-
-    struct text_padding_info* (*FindFreeSpace) (struct  \
-            Elf *self);
-
     int (*FindSectionIndexByName) (struct Elf *self,    \
             const char *section_name);
 };
 typedef struct Elf Elf;
 
-Elf *elf_constructor(char *filename);
-int elf_destructor(Elf *self);
+Elf *ElfConstructor(const char *filename);
+void ElfDestructor(Elf *self);
+
+/*
+ * Target Class
+ * Child class of elf, filled with Target binaru and 
+ * informationn
+ */
+struct Target {
+    Elf *m_elf;
+    Elf64_Xword text_filesize, text_memsize;
+    Elf64_Phdr *text_phdr;  // probably useless, in near future
+    Elf64_Off text_start, text_end;
+    int m_freespace;
+
+    int (*TargetFindFreeSpace) (struct Target *self);
+};
+typedef struct Target Target;
+
+Target *TargetConstructor(const char * filename);
+void TargetDestructor(Target *self);
+
+/*
+ * Shellcode Class
+ * Child class of elf, filled with shellcode and related 
+ * info
+ */
+struct Shellcode {
+    Elf *m_elf;
+    void *m_shellcode;
+    int m_size;
+
+    int (*ShellcodeExtractText) (struct Shellcode *self \
+            , int index);
+    int (*PatchRetAddress) (struct Shellcode *self,     \
+            Elf64_Addr);
+};
+typedef struct Shellcode Shellcode;
+
+Shellcode *ShellcodeConstructor(const char *filename);
+void ShellcodeDestructor(Shellcode *self);
 
 #endif /* ELFFILE_H */

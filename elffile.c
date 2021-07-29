@@ -10,6 +10,55 @@
 #include <sys/mman.h>
 
 /*
+static int elf_patch_ret_address(struct shellcode *s, Elf64_Addr\
+        addr)
+{
+    for(int i = 0; i < s->m_size; i++){
+        if(*((uint8_t *)s->m_shellcode + i) == 0x55 &&          \
+                *((uint8_t *)s->m_shellcode + (i+1)) == 0x99){
+            printf("signature found\n");
+            printf("replacing address with entry point %lx\n",  \
+                    addr);
+            char buffer[16];
+            sprintf(buffer, "%lx", addr);
+
+            for(int j = 0; j < 16; j++, i++){
+                *((uint8_t *)s->m_shellcode + i) = buffer[j];
+            }
+            return 0;
+        }
+    }
+    printf("signature not found in shellcode\n");
+    return -1;
+} */
+
+static struct shellcode *elf_extract_section(Elf *elf, int index)
+{
+    /* its not me, the one whos gonna free this */
+    struct shellcode *s = malloc(sizeof(struct shellcode));
+    if(s == NULL){
+        goto err;
+    }
+
+    s->m_size = (elf->m_shdr[index].sh_size + 8);
+    //s->PatchRetAddress = elf_patch_ret_address;
+    s->m_shellcode = malloc(sizeof(uint8_t) * s->m_size);
+    if(s->m_shellcode == NULL){
+        goto err1;
+    }
+
+    memset(s->m_shellcode, 0, s->m_size);
+    memcpy(s->m_shellcode, &elf->m_map[elf->m_shdr[index].      \
+            sh_offset], elf->m_shdr[index].sh_size);
+err:
+    return s;
+
+err1:
+    free(s);
+    return NULL;
+}
+
+/*
  * to get the .text section code from our shellcode
  */
 static int elf_get_section_index_by_name(Elf *elf, const char   \
@@ -35,43 +84,38 @@ static int elf_get_section_index_by_name(Elf *elf, const char   \
 /*
  * find free space in target binary
  */
-static struct text_padding_info *elf_find_free_space(Elf *elf)
+static int elf_find_free_space(Elf *elf, struct text_padding_info *padding_info)
 {
-    struct text_padding_info *pad_info = malloc(sizeof          \
-            (struct text_padding_info));
-    if(pad_info == NULL){
-        printf("memory allocation failed\n");
-        goto err;
-    }
-
-    memset(pad_info, 0, sizeof(struct text_padding_info));
+    memset(padding_info, 0, sizeof(struct text_padding_info));
 
     for(int i = 0; i < elf->m_ehdr->e_phnum; i++){
         if(elf->m_phdr[i].p_type == PT_LOAD && elf->m_phdr      \
                 [i].p_flags == (PF_R | PF_X)){
             printf("text segment found\n");
-            pad_info->text_filesize = elf->m_phdr[i].p_filesz;
-            pad_info->text_memsize = elf->m_phdr[i].p_memsz;
-            pad_info->text_start = elf->m_phdr[i].p_offset;
-            pad_info->text_end = pad_info->text_start +         \
+            padding_info->text_filesize = elf->m_phdr[i]        \
+                .p_filesz;
+            padding_info->text_memsize = elf->m_phdr[i].p_memsz;
+            padding_info->text_start = elf->m_phdr[i].p_offset;
+            padding_info->text_end = padding_info->text_start + \
                 elf->m_phdr[i].p_filesz;
 
         } else if (elf->m_phdr[i].p_type == PT_LOAD &&          \
-                (elf->m_phdr[i].p_offset - pad_info->text_end)
-                < pad_info->freespace) {
+                (elf->m_phdr[i].p_offset - padding_info->text_end)
+                < padding_info->freespace) {
             printf("segment found with a gap of %d\n",          \
-                    pad_info->freespace);
-            pad_info->freespace = elf->m_phdr[i].p_offset -     \
-                pad_info->text_end;
-            printf("final gap size %d\n", pad_info->freespace);
+                    padding_info->freespace);
+            padding_info->freespace = elf->m_phdr[i].p_offset - \
+                padding_info->text_end;
+            printf("final gap size %d\n", padding_info->freespace);
         } else {
             fprintf(stderr, "failed to find a code cave\n");
             goto err;
         }
     }
+    return 0;
 
 err:
-    return pad_info;
+    return -1;
 }
 
 static void elf_parse_headers(Elf *elf)
@@ -122,8 +166,8 @@ static int elf_init_file(Elf *this)
     }
 
     this->m_size = st.st_size;
-    this->m_map = mmap(NULL, this->m_size, PROT_READ | PROT_WRITE, \
-            MAP_PRIVATE, fd, 0);
+    this->m_map = mmap(NULL, this->m_size, PROT_READ |      \
+            PROT_WRITE, MAP_PRIVATE, fd, 0);
     if(this->m_map == MAP_FAILED){
         fprintf(stderr, "memory map failed");
         goto err1;
@@ -134,13 +178,14 @@ static int elf_init_file(Elf *this)
 
 err1:
     close(fd);
+
 err:
     return -1;
 }
 
-Elf *elf_constructor(char *filename)
+Elf *ElfConstructor(char *filename)
 {
-    struct Elf *elf = malloc(sizeof(Elf));
+    Elf *elf = malloc(sizeof(Elf));
     if(elf == NULL){
         fprintf(stderr, "memory allocation failed\n");
         goto err;
@@ -152,25 +197,101 @@ Elf *elf_constructor(char *filename)
     elf->m_ehdr = NULL;
     elf->m_phdr = NULL;
     elf->m_shdr = NULL;
+
     elf->InitFile = elf_init_file;
     elf->IsElf = elf_is_elf;
     elf->ParseHeaders = elf_parse_headers;
-    elf->FindFreeSpace = elf_find_free_space;
-    elf->FindSectionIndexByName = elf_get_section_index_by_name;
+    elf->FindSectionIndexByName =                       \
+        elf_get_section_index_by_name;
+
 err:
     return elf;
 }
 
-int elf_destructor(Elf *this)
+void ElfDestructor(Elf *this)
 {
     if(this->m_map != NULL){
         if(munmap(this->m_map, this->m_size) < 0){
             fprintf(stderr, "memory unmap failed\n");
-            goto err;
         }
         this->m_map = NULL;
-        return 0;
     }
+
+    free(this);
+}
+
+Target *TargetConstructor(const char *filename)
+{
+    Target *target = malloc(sizeof(Target));
+    if(target == NULL){
+        fprintf(stderr, "memory allocation error\n");
+        goto err;
+    }
+
+    target->m_elf = ElfConstructor(filename);
+    if(target->m_elf == NULL){
+        goto err1;
+    }
+
+    if(target->m_elf->InitFile(target->m_elf) < 0){
+        goto err2;
+    }
+
+    if(target->m_elf->IsElf(target->m_elf) == false){
+        goto err2;
+    }
+
+    target->m_elf->ParseHeaders(target->m_elf);
+
+    return target;
+
 err:
-    return -1;
+    ElfDestructor(target->m_elf);
+
+err1:
+    free(target);
+
+err:
+    return target;
+}
+
+void TargetDestructor(Target *this)
+{
+    ElfDestructor(this->m_elf);
+    free(this);
+}
+
+Shellcode *ShellcodeConstructor(const char *filename)
+{
+    Shellcode *shellcode = malloc(sizeof(Shellcode));
+    if(shellcode == NULL){
+        fprintf(stderr, "memory allocation error\n");
+        goto err;
+    }
+
+    shellcode->m_elf = ElfConstructor(filename);
+    if(shellcode->m_elf == NULL){
+        goto err1;
+    }
+
+    if(shellcode->m_elf->InitFile(shellcode->m_elf) < 0){
+        goto err2;
+    }
+
+    if(shellcode->m_elf->IsElf(shellcode->m_elf) == false){
+        goto err2;
+    }
+
+    shellcode->m_elf->ParseHeaders(shellcode->m_elf);
+
+    return shellcode;
+
+err:
+    ElfDestructor(shellcode->m_elf);
+
+err1:
+    free(shellcode);
+
+err:
+    return shellcode;
 }

