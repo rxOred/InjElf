@@ -42,6 +42,7 @@ struct Target {
     Elf64_Xword text_filesize;
     Elf64_Off text_end;
     Elf64_Addr parasite_addr;
+    int parasite_size;
     int available_freespace;
 
     int (*TargetFindFreeSpace) (struct Target *self);
