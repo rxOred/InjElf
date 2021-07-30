@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+
 /*
  * Elf Class
  * Holds structures and other information related to 
@@ -32,25 +33,6 @@ typedef struct Elf Elf;
 Elf *ElfConstructor(const char *filename);
 void ElfDestructor(Elf *self);
 
-/*
- * Target Class
- * Child class of elf, filled with Target binaru and 
- * informationn
- */
-struct Target {
-    Elf *m_elf;
-    Elf64_Xword text_filesize;
-    Elf64_Off text_end;
-    Elf64_Addr parasite_addr;
-    int parasite_size;
-    int available_freespace;
-
-    int (*TargetFindFreeSpace) (struct Target *self);
-};
-typedef struct Target Target;
-
-Target *TargetConstructor(const char * filename);
-void TargetDestructor(Target *self);
 
 /*
  * Shellcode Class
@@ -71,5 +53,29 @@ typedef struct Shellcode Shellcode;
 
 Shellcode *ShellcodeConstructor(const char *filename);
 void ShellcodeDestructor(Shellcode *self);
+
+
+/*
+ * Target Class
+ * Child class of elf, filled with Target binaru and 
+ * informationn
+ */
+struct Target {
+    Elf *m_elf;
+    Elf64_Xword text_filesize;
+    Elf64_Off text_end;
+    Elf64_Addr parasite_addr;
+    int parasite_size;
+    int available_freespace;
+
+    int (*TargetFindFreeSpace) (struct Target *self);
+    void (*TargetAdjustSections) (struct Target *self);
+    void (*TargetInsertShellcode) (struct Target *self, \
+        Shellcode *shellcode);
+};
+typedef struct Target Target;
+
+Target *TargetConstructor(const char * filename);
+void TargetDestructor(Target *self);
 
 #endif /* ELFFILE_H */

@@ -1,4 +1,5 @@
 #include "elffile.h"
+#include <bits/stdint-uintn.h>
 #include <elf.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -46,6 +47,16 @@ static int shellcode_extract_section(Shellcode *this, int index)
 
 err1:
     return -1;
+}
+
+/* insert shellcode into Target binary */
+static void target_insert_shellcode(Target *this, Shellcode     \
+        *shellcode)
+{
+    for(int i = 0; i < this->parasite_size; i++){
+        this->m_elf->m_map[this->text_end + i] = (*((uint8_t *) \
+            shellcode->m_shellcode) + i);
+    }
 }
 
 /* to adjust section headers and other offsets */
@@ -257,6 +268,9 @@ Target *TargetConstructor(const char *filename)
     }
 
     target->m_elf->ParseHeaders(target->m_elf);
+    target->TargetFindFreeSpace = target_find_free_space;
+    target->TargetAdjustSections = target_adjust_sections;
+    target->TargetInsertShellcode = target_insert_shellcode;
 
     return target;
 
@@ -298,6 +312,8 @@ Shellcode *ShellcodeConstructor(const char *filename)
     }
 
     shellcode->m_elf->ParseHeaders(shellcode->m_elf);
+    shellcode->PatchRetAddress = shellcode_patch_ret_address;
+    shellcode->ShellcodeExtractText = shellcode_extract_section;
 
     return shellcode;
 
@@ -309,4 +325,10 @@ err1:
 
 err:
     return shellcode;
+}
+
+void ShellcodeDestructor(Shellcode *this)
+{
+    ElfDestructor(this->m_elf);
+    free(this);
 }
