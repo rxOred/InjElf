@@ -35,9 +35,9 @@ void ElfDestructor(Elf *self);
 
 
 /*
- * Shellcode Class
- * Child class of elf, filled with shellcode and related 
- * info
+ * Shellcode Class - Shellcode elf binary
+ * Derived from its base, Class Elf
+ * shellcode information
  */
 struct Shellcode {
     Elf *m_elf;
@@ -56,9 +56,8 @@ void ShellcodeDestructor(Shellcode *self);
 
 
 /*
- * Target Class
- * Child class of elf, filled with Target binaru and 
- * informationn
+ * Target Class - depicts Target elf binary
+ * Derived from its base, Class Elf
  */
 struct Target {
     Elf *m_elf;
