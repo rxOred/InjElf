@@ -38,11 +38,16 @@ int main(int argc, char *argv[])
 
     if(t->TargetFindFreeSpace(t, s->m_size) <0)
         goto err2;
-err2:
 
+    t->TargetAdjustSections(t, s->m_size);
+    t->TargetInsertShellcode(t, s);
+
+err2:
+    TargetDestructor(t);
 
 err1:
     ShellcodeDestructor(s);
+
 err:
-    return -1;
+    return 0;
 }

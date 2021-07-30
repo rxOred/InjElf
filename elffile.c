@@ -286,6 +286,11 @@ err:
 
 void TargetDestructor(Target *this)
 {
+    /*
+     * rm target file
+     * write mapped memory region to a new file with same name
+     * un map memory
+     */
     ElfDestructor(this->m_elf);
     free(this);
 }
@@ -329,6 +334,7 @@ err:
 
 void ShellcodeDestructor(Shellcode *this)
 {
+    /* remove shellcode files */
     ElfDestructor(this->m_elf);
     free(this);
 }
