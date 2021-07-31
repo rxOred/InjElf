@@ -1,4 +1,3 @@
-#include "util.h"
 #include "elffile.h"
 #include <fcntl.h>
 #include <stdint.h>
@@ -20,24 +19,38 @@ char *parse_args(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-    Shellcode *s = ShellcodeConstructor("shell");
-    if(s == NULL)
+    if(argc != 2){
         goto err;
+    }
+
+    Shellcode *s = ShellcodeConstructor("shell");
+    if(s == NULL){
+        puts("1");
+        goto err;
+    }
 
     int index = s->m_elf->FindSectionIndexByName(s->m_elf   \
             , ".text");
-    if(index < 0)
+    if(index < 0){
+        puts("2");
         goto err1;
+    }
 
-    if(s->ShellcodeExtractText(s, index) < 0)
+    if(s->ShellcodeExtractText(s, index) < 0){
+        puts("3");
         goto err;
+    }
 
     Target *t = TargetConstructor(argv[1]);
-    if(t == NULL)
+    if(t == NULL){
+        puts("4");
         goto err1;
+    }
 
-    if(t->TargetFindFreeSpace(t, s->m_size) <0)
+    if(t->TargetFindFreeSpace(t, s->m_size) <0){
+        puts("5");
         goto err2;
+    }
 
     t->TargetAdjustSections(t, s->m_size);
     t->TargetInsertShellcode(t, s);

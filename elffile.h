@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-
 /*
  * Elf Class
  * Holds structures and other information related to 
@@ -72,6 +71,7 @@ struct Target {
         int parasite_size);
     void (*TargetInsertShellcode) (struct Target *self, \
         Shellcode *shellcode);
+    int (*TargetSaveFile) (struct Target *self);
 };
 typedef struct Target Target;
 
