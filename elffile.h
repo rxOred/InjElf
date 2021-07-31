@@ -16,7 +16,7 @@
 struct Elf {
     const char *m_filename;
     int m_size;
-    uint8_t *m_map;
+    void *m_map;
     Elf64_Ehdr *m_ehdr;
     Elf64_Shdr *m_shdr;
     Elf64_Phdr *m_phdr;
@@ -41,7 +41,7 @@ void ElfDestructor(Elf *self);
 struct Shellcode {
     Elf *m_elf;
     void *m_shellcode;
-    int m_size;
+    int m_shellcode_size;
 
     int (*ShellcodeExtractText) (struct Shellcode *self \
             , int index);
