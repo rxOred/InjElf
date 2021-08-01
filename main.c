@@ -35,7 +35,7 @@ int main(int argc, char *argv[])
         puts("2");
         goto err1;
     }
-puts("aaa");
+
     s->ShellcodeExtractText(s, index);   
 
     Target *t = TargetConstructor(argv[1]);
@@ -44,6 +44,7 @@ puts("aaa");
         goto err1;
     }
 
+    s->ShellcodePatchRetAddress(s, t->m_elf->m_ehdr->e_entry);
     if(t->TargetFindFreeSpace(t, s->m_shellcode_size) <0){
         puts("5");
         goto err2;
@@ -58,6 +59,8 @@ puts("aaa");
             t->m_elf->m_shdr[i].sh_size += s->m_shellcode_size;
         }
     }
+
+    t->TargetSaveFile(t);
 err2:
     TargetDestructor(t);
 
