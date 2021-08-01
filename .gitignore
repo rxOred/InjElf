@@ -2,3 +2,8 @@ shellcode.asm
 shellcode
 shellcode.o
 vgcore.*
+out
+shell
+shell.o
+target1
+

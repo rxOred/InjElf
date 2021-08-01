@@ -26,6 +26,7 @@ struct Elf {
     void (*ParseHeaders) (struct Elf *self);
     int (*FindSectionIndexByName) (struct Elf *self,    \
             const char *section_name);
+    void (*RemoveMap) (struct Elf *self);
 };
 typedef struct Elf Elf;
 
