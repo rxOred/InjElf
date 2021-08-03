@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
         goto err;
     }
 
-    Shellcode *s = ShellcodeConstructor("shell");
+    Shellcode *s = ShellcodeConstructor("shellcode");
     if(s == NULL){
         puts("1");
         goto err;

@@ -17,36 +17,51 @@
 
 /* patch return address of the shellcode */
 static int shellcode_patch_ret_address(struct Shellcode *this,  \
-        Elf64_Addr addr)
+    Elf64_Addr addr)
 {
-    for(int i = 0; i < this->m_shellcode_size; i++){
+    /* converting int to int array */
+    char buf[16];
+    int address[16];
+
+    sprintf(buf, "%lx", addr);
+    for (int i = 0; i < 16; i++){
+        if(buf[i] >= 0x61 && buf[i] <= 0x66)
+            address[i] = buf[i] - 87;
+
+        else if(buf[i] >= 0x30 && buf[i] <= 0x39)
+            address[i] = buf[i] - 48;
+
+        else
+            goto err;
+    }
+
+    for (int i = 0; i < this->m_shellcode_size; i++){
+
+#ifdef DEBUG
         printf("shellcode %x\n", this->m_shellcode[i]);
-        if(this->m_shellcode[i] == 0x99 && this->m_shellcode[i  \
-            + 1] == 0x55){
+#endif
+        if (this->m_shellcode[i] == 0x99 && this->m_shellcode   \
+                [i + 1] == 0x55){
 
 #ifdef DEBUG
             printf("signature found\n");
             printf("replacing address with entry point %lx\n",  \
-                    addr);
+                addr);
 #endif
-            char buffer[16];
-
-#ifdef DEBUG
-            sprintf(buffer, "%lx", addr);
-#endif
-
-            for(int j = 0; j < 16 && i < this->m_shellcode_size \
+            for (int j = 0; j < 16 && i < this->m_shellcode_size \
                     ; j++, i++){
-                this->m_shellcode[i] = buffer[j];
+                this->m_shellcode[i] = address[j];
             }
+
             return 0;
         }
     }
 
-#ifdef DEBUG
-    printf("signature not found in shellcode\n");
-#endif
+err:
 
+#ifdef DEBUG
+    printf("an error occured while patching shellcode");
+#endif
     return -1;
 }
 

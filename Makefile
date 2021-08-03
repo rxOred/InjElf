@@ -4,8 +4,8 @@ OBJS=objs/elffile.o objs/main.o
 BIN=injector
 
 all:$(BIN)
-	nasm -f elf64 -o shell.o shell.asm
-	ld -m elf_x86_64 -o shell shell.o
+	nasm -f elf64 -o shellcode.o shellcode.asm
+	ld -m elf_x86_64 -o shellcode shellcode.o
 	gcc -static target.c -o target
 
 $(BIN):$(OBJS)
