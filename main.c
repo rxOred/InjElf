@@ -25,14 +25,12 @@ int main(int argc, char *argv[])
 
     Shellcode *s = ShellcodeConstructor("shellcode");
     if(s == NULL){
-        puts("1");
         goto err;
     }
 
     int index = s->m_elf->FindSectionIndexByName(s->m_elf   \
             , ".text");
     if(index < 0){
-        puts("2");
         goto err1;
     }
 
@@ -40,13 +38,11 @@ int main(int argc, char *argv[])
 
     Target *t = TargetConstructor(argv[1]);
     if(t == NULL){
-        puts("4");
         goto err1;
     }
 
     s->ShellcodePatchRetAddress(s, t->m_elf->m_ehdr->e_entry);
     if(t->TargetFindFreeSpace(t, s->m_shellcode_size) <0){
-        puts("5");
         goto err2;
     }
 
